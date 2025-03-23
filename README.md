@@ -2,7 +2,7 @@
 
 A sleek, modern tool for visualizing and experimenting with Signed Distance Functions (SDFs) in 2D.
 
-![SDF Visualizer Screenshot](test.png)
+![SDF Visualizer Screenshot](data/test.png)
 
 ## Features
 
