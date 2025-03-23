@@ -21,7 +21,7 @@ except ImportError as e:
 
 # Import application modules
 try:
-    from splash_screen import start_with_splash
+    from tron_splash_screen import start_with_tron_splash
     from futuristic_theme import FuturisticTheme
     from futuristic_sdf_visualizer import FuturisticSDFVisualizer
 except ImportError as e:
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         # Start with splash screen
         try:
             print("Starting with splash screen...")
-            start_with_splash(main)
+            start_with_tron_splash(main)
         except Exception as e:
             print(f"Error in splash screen: {e}")
             print("Falling back to direct start...")
