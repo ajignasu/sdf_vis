@@ -20,6 +20,7 @@ class FuturisticSDFVisualizer:
         self.root.title("Futuristic SDF Visualizer")
         self.resolution = resolution
         self.domain_size = domain_size
+        self.update_grid()
         
         # Apply futuristic theme
         try:
@@ -106,6 +107,15 @@ class FuturisticSDFVisualizer:
         ttk.Radiobutton(bool_frame, text="Smooth Union", variable=self.bool_var, value="smooth_union", 
                        command=self.update_boolean_op).grid(row=4, column=0, sticky=tk.W)
         
+        # Drawing mode button
+        drawing_frame = ttk.Frame(shape_frame)
+        drawing_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.create_button(drawing_frame, "✏️ Draw Shape", self.toggle_drawing_mode, 0)
+
+        # Drawing options that will be shown when in drawing mode
+        self.drawing_options_frame = ttk.Frame(shape_frame)
+        self.drawing_mode_active = False
+        
         # Shape properties section
         self.properties_frame = ttk.LabelFrame(left_panel, text="SHAPE PROPERTIES", padding=5)
         self.properties_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
@@ -145,6 +155,24 @@ class FuturisticSDFVisualizer:
         self.anim_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(viz_frame, text="Animation", variable=self.anim_var,
                     command=self.toggle_animation).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=2)
+        
+        # Resolution control
+        ttk.Label(viz_frame, text="Resolution:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        resolution_frame = ttk.Frame(viz_frame)
+        resolution_frame.grid(row=4, column=1, sticky=tk.W, pady=2)
+
+        self.resolution_var = tk.IntVar(value=self.resolution)
+        resolution_entry = ttk.Entry(resolution_frame, textvariable=self.resolution_var, width=5)
+        resolution_entry.pack(side=tk.LEFT, padx=(0, 5))
+        resolution_entry.bind("<Return>", self.update_resolution)
+
+        # Preset resolution buttons
+        ttk.Button(resolution_frame, text="100", command=lambda: self.set_resolution(100), 
+                width=3).pack(side=tk.LEFT, padx=1)
+        ttk.Button(resolution_frame, text="200", command=lambda: self.set_resolution(200), 
+                width=3).pack(side=tk.LEFT, padx=1)
+        ttk.Button(resolution_frame, text="400", command=lambda: self.set_resolution(400), 
+                width=3).pack(side=tk.LEFT, padx=1)
         
         # Save button
         ttk.Button(viz_frame, text="Save Image", command=self.save_visualization).grid(
@@ -201,7 +229,241 @@ class FuturisticSDFVisualizer:
         
         # Initialize the plot
         self.update_plot()
+
+    def toggle_drawing_mode(self):
+        """Toggle between normal and drawing modes"""
+        self.drawing_mode_active = not self.drawing_mode_active
+        
+        if self.drawing_mode_active:
+            # Show drawing options
+            self.drawing_options_frame.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=5)
+            
+            # Create drawing options if they don't exist yet
+            if not hasattr(self, 'brush_size_var'):
+                self.brush_size_var = tk.IntVar(value=5)
+                self.smoothing_var = tk.BooleanVar(value=True)
+                
+                ttk.Label(self.drawing_options_frame, text="Brush Size:").grid(row=0, column=0, sticky=tk.W)
+                ttk.Scale(self.drawing_options_frame, from_=1, to=20, variable=self.brush_size_var, 
+                        orient=tk.HORIZONTAL).grid(row=0, column=1, sticky=(tk.W, tk.E))
+                
+                ttk.Checkbutton(self.drawing_options_frame, text="Smooth SDF", 
+                            variable=self.smoothing_var).grid(row=1, column=0, columnspan=2, sticky=tk.W)
+                
+                ttk.Button(self.drawing_options_frame, text="Clear Canvas", 
+                        command=self.clear_drawing).grid(row=2, column=0, sticky=tk.W, pady=5)
+                ttk.Button(self.drawing_options_frame, text="Apply", 
+                        command=self.apply_drawing).grid(row=2, column=1, sticky=tk.E, pady=5)
+            
+            # Setup the drawing canvas
+            self.setup_drawing_canvas()
+            
+        else:
+            # Hide drawing options
+            self.drawing_options_frame.grid_forget()
+            
+            # Remove drawing canvas bindings
+            if hasattr(self, 'drawing_cid'):
+                self.canvas.mpl_disconnect(self.drawing_cid_press)
+                self.canvas.mpl_disconnect(self.drawing_cid_motion)
+                self.canvas.mpl_disconnect(self.drawing_cid_release)
+                delattr(self, 'drawing_cid_press')
+                
+            # Remove drawing overlay if it exists
+            if hasattr(self, 'drawing_overlay') and self.drawing_overlay in self.ax_sdf.collections:
+                self.drawing_overlay.remove()
     
+    def setup_drawing_canvas(self):
+        """Setup canvas for drawing shapes"""
+        # Initialize drawing data
+        self.drawing_mask = np.zeros((self.resolution, self.resolution), dtype=bool)
+        self.drawing = False
+        
+        # Create a scatter plot for showing the drawn points
+        self.drawing_overlay = self.ax_sdf.scatter([], [], s=1, color='white', alpha=0.7)
+        
+        # Connect event handlers
+        self.drawing_cid_press = self.canvas.mpl_connect('button_press_event', self.on_drawing_press)
+        self.drawing_cid_motion = self.canvas.mpl_connect('motion_notify_event', self.on_drawing_motion)
+        self.drawing_cid_release = self.canvas.mpl_connect('button_release_event', self.on_drawing_release)
+        
+        # Show instructions
+        self.ax_sdf.set_title("Drawing Mode: Click and drag to draw a shape", 
+                            fontsize=12, color=FuturisticTheme.COLORS['accent'])
+        self.canvas.draw()
+
+    def on_drawing_press(self, event):
+        """Handle mouse press for drawing"""
+        if event.inaxes != self.ax_sdf:
+            return
+        
+        self.drawing = True
+        self.draw_at_position(event.xdata, event.ydata)
+
+    def on_drawing_motion(self, event):
+        """Handle mouse motion for drawing"""
+        if not self.drawing or event.inaxes != self.ax_sdf:
+            return
+        
+        self.draw_at_position(event.xdata, event.ydata)
+
+    def on_drawing_release(self, event):
+        """Handle mouse release for drawing"""
+        self.drawing = False
+
+    def draw_at_position(self, x, y):
+        """Draw at the specified position in data coordinates"""
+        if x is None or y is None:
+            return
+            
+        # Convert data coordinates to pixel indices
+        x_idx = int((x + self.domain_size) / (2 * self.domain_size) * (self.resolution - 1))
+        y_idx = int((y + self.domain_size) / (2 * self.domain_size) * (self.resolution - 1))
+        
+        # Ensure indices are within bounds
+        x_idx = max(0, min(x_idx, self.resolution - 1))
+        y_idx = max(0, min(y_idx, self.resolution - 1))
+        
+        # Get brush size
+        brush_size = self.brush_size_var.get()
+        
+        # Draw a circle at this position
+        y_indices, x_indices = np.ogrid[-brush_size:brush_size+1, -brush_size:brush_size+1]
+        mask = x_indices**2 + y_indices**2 <= brush_size**2
+        
+        # Apply the mask to the drawing
+        for dy in range(-brush_size, brush_size+1):
+            for dx in range(-brush_size, brush_size+1):
+                if mask[dy+brush_size, dx+brush_size]:
+                    ny, nx = y_idx + dy, x_idx + dx
+                    if 0 <= ny < self.resolution and 0 <= nx < self.resolution:
+                        self.drawing_mask[ny, nx] = True
+        
+        # Update the drawing overlay
+        y_coords, x_coords = np.where(self.drawing_mask)
+        
+        # Convert indices back to data coordinates
+        x_data = x_coords / (self.resolution - 1) * (2 * self.domain_size) - self.domain_size
+        y_data = y_coords / (self.resolution - 1) * (2 * self.domain_size) - self.domain_size
+        
+        # Update the scatter plot
+        self.drawing_overlay.set_offsets(np.column_stack([x_data, y_data]))
+        self.canvas.draw_idle()
+
+    def clear_drawing(self):
+        """Clear the current drawing"""
+        self.drawing_mask = np.zeros((self.resolution, self.resolution), dtype=bool)
+        self.drawing_overlay.set_offsets(np.empty((0, 2)))
+        self.canvas.draw_idle()
+
+    def apply_drawing(self):
+        """Apply the current drawing as a new shape"""
+        if not np.any(self.drawing_mask):
+            # Nothing drawn
+            return
+        
+        # Compute SDF from the drawing mask
+        sdf = self.compute_sdf_from_drawing()
+        
+        # Create a new shape based on the drawing
+        shape = {
+            'type': 'custom',
+            'name': f"Custom Shape {len(self.shapes) + 1}",
+            'sdf_data': sdf
+        }
+        
+        # Add the shape
+        self.shapes.append(shape)
+        self.shapes_listbox.insert(tk.END, shape['name'])
+        self.active_shape_index = len(self.shapes) - 1
+        
+        # Update display
+        self.update_properties_panel()
+        self.update_plot()
+        
+        # Clear the drawing for next use
+        self.clear_drawing()
+        
+        # Exit drawing mode
+        self.toggle_drawing_mode()
+
+    def compute_sdf_from_drawing(self):
+        """Compute a signed distance field from the drawing mask"""
+        from scipy import ndimage
+        
+        # Create a copy of the drawing mask
+        mask = self.drawing_mask.copy()
+        
+        # Determine inside/outside
+        # We'll use a flood fill from the edges to determine the outside
+        outside_mask = np.zeros_like(mask, dtype=bool)
+        
+        # Start with the border pixels
+        border_mask = np.zeros_like(mask, dtype=bool)
+        border_mask[0, :] = True
+        border_mask[-1, :] = True
+        border_mask[:, 0] = True
+        border_mask[:, -1] = True
+        
+        # Find pixels that are on the border and not part of the drawing
+        seeds = np.where(border_mask & ~mask)
+        outside_mask[seeds] = True
+        
+        # Use binary dilation to flood fill until convergence
+        old_count = 0
+        while np.sum(outside_mask) != old_count:
+            old_count = np.sum(outside_mask)
+            outside_mask = ndimage.binary_dilation(outside_mask, 
+                                                structure=np.ones((3, 3)), 
+                                                mask=~mask)
+        
+        # The inside is everything that's not outside
+        inside_mask = ~outside_mask
+        
+        # Compute distance from the boundary for both inside and outside
+        outside_distance = ndimage.distance_transform_edt(~mask) / self.resolution * (2 * self.domain_size)
+        inside_distance = ndimage.distance_transform_edt(mask) / self.resolution * (2 * self.domain_size)
+        
+        # Combine into a signed distance field
+        sdf = np.zeros_like(outside_distance)
+        sdf[outside_mask] = outside_distance[outside_mask]
+        sdf[inside_mask] = -inside_distance[inside_mask]
+        
+        # Apply smoothing if requested
+        if self.smoothing_var.get():
+            sdf = ndimage.gaussian_filter(sdf, sigma=0.5)
+        
+        return sdf
+    
+    def update_grid(self):
+        """Update the grid based on current resolution"""
+        x = np.linspace(-self.domain_size, self.domain_size, self.resolution)
+        y = np.linspace(-self.domain_size, self.domain_size, self.resolution)
+        self.X, self.Y = np.meshgrid(x, y)
+
+    def update_resolution(self, event=None):
+        """"Update resolution from the entry field"""
+        try:
+            new_resolution = int(self.resolution_var.get())
+            if new_resolution > 512:
+                if not tk.messagebox.askyesno(
+                    "High Resolution Warning",
+                    "Setting resolution higher than 512 may cause performance issues. Continue?"
+                ):
+                    self.resolution_var.set(self.resolution)
+                    return
+            self.set_resolution(new_resolution)
+        except ValueError:
+            self.resolution_var.set(self.resolution)
+    
+    def set_resolution(self, new_resolution):
+        """Set a new resolution and update visualization"""
+        if new_resolution != self.resolution:
+            self.resolution = new_resolution
+            self.resolution_var.set(new_resolution)
+            self.update_grid()
+            self.update_plot()
+
     def create_button(self, parent, text, command, row):
         """Create a styled button"""
         btn = ttk.Button(parent, text=text, command=command)
@@ -647,6 +909,30 @@ class FuturisticSDFVisualizer:
             inside = ((a1 >= 0) & (a2 >= 0) & (a3 >= 0)) | ((a1 <= 0) & (a2 <= 0) & (a3 <= 0))
             
             return np.where(inside, -distance, distance)
+
+        elif shape['type'] == 'custom':
+            # For custom shapes, we already have the SDF data
+            # We need to interpolate it to match the current resolution
+            from scipy.interpolate import RegularGridInterpolator
+            
+            custom_sdf = shape['sdf_data']
+            h, w = custom_sdf.shape
+            
+            # Create coordinate grids for the original data
+            x_orig = np.linspace(-self.domain_size, self.domain_size, w)
+            y_orig = np.linspace(-self.domain_size, self.domain_size, h)
+            
+            # Create interpolator
+            interpolator = RegularGridInterpolator((y_orig, x_orig), custom_sdf,
+                                                bounds_error=False, fill_value=self.domain_size)
+            
+            # Create points to query
+            points = np.column_stack([y.flatten(), x.flatten()])
+            
+            # Compute interpolated SDF values
+            interp_sdf = interpolator(points).reshape(x.shape)
+            
+            return interp_sdf
         
         # Default fallback
         return np.inf * np.ones_like(x)
