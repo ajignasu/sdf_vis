@@ -44,8 +44,8 @@ A sleek, modern tool for visualizing and experimenting with Signed Distance Func
    ```
 
 3. Activate the virtual environment:
-   - Windows: `sdf-venv\Scripts\activate`
-   - macOS/Linux: `source sdf-venv/bin/activate`
+   - Windows: `sdfviz\Scripts\activate`
+   - macOS/Linux: `source sdfviz/bin/activate`
 
 4. Install dependencies:
    ```bash
