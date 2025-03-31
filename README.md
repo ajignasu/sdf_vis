@@ -43,7 +43,7 @@ A sleek, modern tool for visualizing and experimenting with Signed Distance Func
    python -m venv sdf-venv
    ```
 
-3. Activate the virtual environment:
+3. Activate the virtual environment:s
    - Windows: `sdfviz\Scripts\activate`
    - macOS/Linux: `source sdfviz/bin/activate`
 
@@ -55,6 +55,9 @@ A sleek, modern tool for visualizing and experimenting with Signed Distance Func
 ## Usage
 
 ### Starting the Application
+```bash
+env.bat
+```
 
 Run the main script:
 
