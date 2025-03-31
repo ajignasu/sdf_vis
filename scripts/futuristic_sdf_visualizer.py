@@ -15,7 +15,7 @@ from futuristic_theme import FuturisticTheme
 from advanced_visualization import AdvancedVisualization
 
 class FuturisticSDFVisualizer:
-    def __init__(self, root, resolution=200, domain_size=5.0):
+    def __init__(self, root, resolution=32, domain_size=5.0):
         self.root = root
         self.root.title("Futuristic SDF Visualizer")
         self.resolution = resolution
@@ -133,18 +133,15 @@ class FuturisticSDFVisualizer:
         style_combo.grid(row=0, column=1, sticky=tk.W, pady=2)
         style_combo.bind("<<ComboboxSelected>>", self.update_visualization_style)
         
-
-        viz_frame = ttk.LabelFrame(left_panel, text="VISUALIZATION", padding=5)
-        viz_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
-        
-        # Visualization style
-        ttk.Label(viz_frame, text="Style:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.viz_style_var = tk.StringVar(value="Standard")
-        style_combo = ttk.Combobox(viz_frame, textvariable=self.viz_style_var, 
-                                values=["Standard", "Hologram", "Neon", "Heatmap", "Electric"], 
-                                state="readonly", width=10)
-        style_combo.grid(row=0, column=1, sticky=tk.W, pady=2)
-        style_combo.bind("<<ComboboxSelected>>", self.update_visualization_style)
+        # Analysis Mode
+        ttk.Label(viz_frame, text="Analysis:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        self.analysis_var = tk.StringVar(value="None")
+        analysis_combo = ttk.Combobox(viz_frame, textvariable=self.analysis_var, 
+                                    values=["None", "Gradient Vectors", "Isolines", 
+                                        "Path Tracing", "Curvature"], 
+                                    state="readonly", width=12)
+        analysis_combo.grid(row=5, column=1, sticky=tk.W, pady=2)
+        analysis_combo.bind("<<ComboboxSelected>>", self.update_analysis_view)
         
         # Unsigned SDF option
         self.unsigned_var = tk.BooleanVar(value=False)
@@ -167,11 +164,15 @@ class FuturisticSDFVisualizer:
         resolution_entry.bind("<Return>", self.update_resolution)
 
         # Preset resolution buttons
-        ttk.Button(resolution_frame, text="100", command=lambda: self.set_resolution(100), 
+        ttk.Button(resolution_frame, text="32", command=lambda: self.set_resolution(32), 
                 width=3).pack(side=tk.LEFT, padx=1)
-        ttk.Button(resolution_frame, text="200", command=lambda: self.set_resolution(200), 
+        ttk.Button(resolution_frame, text="64", command=lambda: self.set_resolution(64), 
                 width=3).pack(side=tk.LEFT, padx=1)
-        ttk.Button(resolution_frame, text="400", command=lambda: self.set_resolution(400), 
+        ttk.Button(resolution_frame, text="128", command=lambda: self.set_resolution(128), 
+                width=3).pack(side=tk.LEFT, padx=1)
+        ttk.Button(resolution_frame, text="256", command=lambda: self.set_resolution(256), 
+                width=3).pack(side=tk.LEFT, padx=1)
+        ttk.Button(resolution_frame, text="512", command=lambda: self.set_resolution(512), 
                 width=3).pack(side=tk.LEFT, padx=1)
         
         # Save button
@@ -315,6 +316,19 @@ class FuturisticSDFVisualizer:
         """Draw at the specified position in data coordinates"""
         if x is None or y is None:
             return
+        
+        # # Get brush size
+        # raw_brush_size = self.brush_size_var.get()
+        # brush_size = max(1, int(raw_brush_size * self.resolution / 200))
+
+        brush_radius_domain = self.brush_size_var.get() * self.domain_size / 20.0
+    
+        # Calculate which pixels this covers based on current resolution
+        pixels_per_unit = self.resolution / (2 * self.domain_size)
+        brush_radius_pixels = int(brush_radius_domain * pixels_per_unit)
+        
+        # Ensure a minimum size
+        brush_size = max(1, brush_radius_pixels)
             
         # Convert data coordinates to pixel indices
         x_idx = int((x + self.domain_size) / (2 * self.domain_size) * (self.resolution - 1))
@@ -323,9 +337,6 @@ class FuturisticSDFVisualizer:
         # Ensure indices are within bounds
         x_idx = max(0, min(x_idx, self.resolution - 1))
         y_idx = max(0, min(y_idx, self.resolution - 1))
-        
-        # Get brush size
-        brush_size = self.brush_size_var.get()
         
         # Draw a circle at this position
         y_indices, x_indices = np.ogrid[-brush_size:brush_size+1, -brush_size:brush_size+1]
@@ -490,6 +501,195 @@ class FuturisticSDFVisualizer:
     def toggle_animation(self):
         self.animation_active = self.anim_var.get()
         self.update_plot()
+
+    def visualize_gradient(self, ax, sdf):
+        """Visualize the gradient (normal) vectors of the SDF"""
+        # Calculate the gradient
+        gradient_y, gradient_x = np.gradient(sdf)
+        
+        # Normalize for display
+        magnitude = np.sqrt(gradient_x**2 + gradient_y**2)
+        mask = magnitude > 1e-10
+        gradient_x[mask] /= magnitude[mask]
+        gradient_y[mask] /= magnitude[mask]
+        
+        # Downsample for clearer display
+        skip = max(1, self.resolution // 16)
+        
+        # Plot the SDF as background
+        cmap = FuturisticTheme.get_colormap()
+        ax.imshow(sdf, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size],
+                origin='lower', cmap=cmap, alpha=0.5)
+        
+        # Plot gradient vectors
+        X_sub = self.X[::skip, ::skip]
+        Y_sub = self.Y[::skip, ::skip]
+        gradient_x_sub = gradient_x[::skip, ::skip]
+        gradient_y_sub = gradient_y[::skip, ::skip]
+        
+        ax.quiver(X_sub, Y_sub, gradient_x_sub, gradient_y_sub, 
+                color='white', scale=30, alpha=0.7)
+        
+        # Add zero level contour
+        ax.contour(self.X, self.Y, sdf, levels=[0], colors=['white'], linewidths=2)
+
+    def visualize_isolines(self, ax, sdf):
+        """Visualize isolines (contours) of the SDF"""
+        # Create an array of levels for the isolines
+        num_levels = max(5, min(21, self.resolution // 10))
+        levels = np.linspace(-self.domain_size/2, self.domain_size/2, num_levels)
+        
+        # Plot the SDF with isolines
+        cmap = FuturisticTheme.get_colormap()
+        contour_filled = ax.contourf(self.X, self.Y, sdf, levels=levels, 
+                                cmap=cmap, alpha=0.7)
+        
+        # Add contour lines
+        contour_lines = ax.contour(self.X, self.Y, sdf, levels=levels, 
+                                colors='white', linewidths=0.5)
+        
+        # Add contour labels
+        if self.resolution >= 128:
+            # For higher resolutions, show more labels
+            ax.clabel(contour_lines, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        else:
+            # For lower resolutions, show fewer labels
+            select_levels = levels[::3]  # Show every third level
+            ax.clabel(contour_lines, levels=select_levels, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        
+        # Highlight the zero contour
+        ax.contour(self.X, self.Y, sdf, levels=[0], colors=['yellow'], linewidths=2)
+
+    def visualize_path_tracing(self, ax, sdf):
+        """Visualize path tracing along the SDF gradient"""
+        # Plot the SDF as background
+        cmap = FuturisticTheme.get_colormap()
+        ax.imshow(sdf, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size],
+                origin='lower', cmap=cmap, alpha=0.5)
+        
+        # Add zero level contour
+        ax.contour(self.X, self.Y, sdf, levels=[0], colors=['white'], linewidths=2)
+        
+        # Generate random starting points
+        num_paths = min(30, max(10, self.resolution // 10))
+        np.random.seed(42)  # For reproducibility
+        start_x = np.random.uniform(-self.domain_size, self.domain_size, num_paths)
+        start_y = np.random.uniform(-self.domain_size, self.domain_size, num_paths)
+        
+        # Trace paths
+        for i in range(num_paths):
+            x, y = start_x[i], start_y[i]
+            path_x, path_y = [x], [y]
+            
+            # Follow the gradient to the nearest boundary
+            for _ in range(100):  # Maximum steps
+                # Interpolate SDF value at this point
+                x_idx = int((x + self.domain_size) / (2 * self.domain_size) * (self.resolution - 1))
+                y_idx = int((y + self.domain_size) / (2 * self.domain_size) * (self.resolution - 1))
+                
+                if x_idx < 0 or x_idx >= self.resolution or y_idx < 0 or y_idx >= self.resolution:
+                    break
+                    
+                current_sdf = sdf[y_idx, x_idx]
+                
+                # Stop if we're close to the boundary
+                if abs(current_sdf) < 0.05:
+                    break
+                    
+                # Get the gradient (direction to the boundary)
+                # Use central differences for better accuracy
+                if 0 < x_idx < self.resolution-1 and 0 < y_idx < self.resolution-1:
+                    dx = (sdf[y_idx, x_idx+1] - sdf[y_idx, x_idx-1]) / 2
+                    dy = (sdf[y_idx+1, x_idx] - sdf[y_idx-1, x_idx]) / 2
+                    
+                    # Normalize the gradient
+                    length = np.sqrt(dx**2 + dy**2)
+                    if length > 1e-10:
+                        dx /= length
+                        dy /= length
+                        
+                        # Follow the gradient (negative for inside points)
+                        step_size = min(0.1, abs(current_sdf))
+                        x -= dx * step_size * np.sign(current_sdf)
+                        y -= dy * step_size * np.sign(current_sdf)
+                        path_x.append(x)
+                        path_y.append(y)
+                    else:
+                        break
+                else:
+                    break
+            
+            # Plot the path
+            ax.plot(path_x, path_y, 'o-', markersize=1, linewidth=1, alpha=0.7,
+                color=plt.cm.cool(i/num_paths))
+
+    def visualize_curvature(self, ax, sdf):
+        """Visualize the curvature of the SDF"""
+        # Calculate the second derivatives
+        gradient_y, gradient_x = np.gradient(sdf)
+        hessian_xx = np.gradient(gradient_x, axis=1)
+        hessian_xy = np.gradient(gradient_x, axis=0)
+        hessian_yx = np.gradient(gradient_y, axis=1)
+        hessian_yy = np.gradient(gradient_y, axis=0)
+        
+        # Calculate gradient magnitude (for normalization)
+        gradient_magnitude = np.sqrt(gradient_x**2 + gradient_y**2)
+        
+        # Calculate mean curvature
+        numerator = hessian_xx * (1 + gradient_y**2) - 2 * hessian_xy * gradient_x * gradient_y + hessian_yy * (1 + gradient_x**2)
+        denominator = gradient_magnitude**3
+        
+        # Avoid division by zero
+        mask = denominator > 1e-10
+        curvature = np.zeros_like(sdf)
+        curvature[mask] = numerator[mask] / denominator[mask]
+        
+        # Clip extreme values for better visualization
+        curvature = np.clip(curvature, -2, 2)
+        
+        # Create a custom colormap for curvature
+        curvature_cmap = LinearSegmentedColormap.from_list(
+            "curvature", [(0, 0, 1), (1, 1, 1), (1, 0, 0)], N=256)
+        
+        # Clear the axis - keep old position and size
+        bbox = ax.get_position()
+        ax.clear()
+        
+        # Remove existing colorbar if it exists
+        if hasattr(self, 'curvature_colorbar') and self.curvature_colorbar is not None:
+            try:
+                self.curvature_colorbar.remove()
+            except:
+                pass
+            self.curvature_colorbar = None
+        
+        # Plot the curvature
+        im = ax.imshow(curvature, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size],
+                    origin='lower', cmap=curvature_cmap)
+        
+        # Add zero level contour to show the shape boundary
+        ax.contour(self.X, self.Y, sdf, levels=[0], colors=['black'], linewidths=2)
+        
+        # Add a new colorbar and store a reference to it
+        # Use a fixed size and position for the colorbar to prevent figure shrinking
+        # cax = self.fig.add_axes([bbox.x1 + 0.02, bbox.y0, 0.02, bbox.height])
+        cax = self.fig.add_axes([0.94, 0.15, 0.02, 0.7])
+        self.curvature_colorbar = self.fig.colorbar(im, cax=cax)
+        self.curvature_colorbar.set_label('Curvature', color=FuturisticTheme.COLORS['text'])
+        
+        # Restore original axis position
+        ax.set_position(bbox)
+        
+        # Set up the plot
+        ax.set_xlabel('X', fontsize=10, color=FuturisticTheme.COLORS['text'])
+        ax.set_ylabel('Y', fontsize=10, color=FuturisticTheme.COLORS['text'])
+        ax.set_xlim(-self.domain_size, self.domain_size)
+        ax.set_ylim(-self.domain_size, self.domain_size)
+        ax.set_aspect('equal')
+    
+    def update_analysis_view(self, event=None):
+        """Update the visualization when analysis mode changes"""
+        self.update_plot()  # Just redraw the plot with the new analysis mode
     
     def add_shape(self, shape_type):
         # Default shape parameters
@@ -816,7 +1016,7 @@ class FuturisticSDFVisualizer:
         if self.active_shape_index is not None:
             self.shapes[self.active_shape_index]['vertices'][vertex_index] = value
             self.update_plot()
-
+    
     def compute_sdf(self, shape, x, y):
         # Compute the SDF for a single shape
         if shape['type'] == 'circle':
@@ -1009,9 +1209,29 @@ class FuturisticSDFVisualizer:
         
         # Add futuristic grid lines
         FuturisticTheme.add_grid_lines(self.ax_sdf, spacing=1.0)
+
+        # Remove any existing colorbar when switching modes
+        if hasattr(self, 'curvature_colorbar') and self.curvature_colorbar is not None:
+            try:
+                self.curvature_colorbar.remove()
+            except:
+                pass
+            self.curvature_colorbar = None
         
-        # Apply visualization based on selected style
-        if self.visualization_style == "Standard":
+        # Check if we should display an analysis view
+        analysis_mode = self.analysis_var.get()
+        if analysis_mode != "None" and sdf is not None:
+            # Apply the selected analysis visualization
+            if analysis_mode == "Gradient Vectors":
+                self.visualize_gradient(self.ax_sdf, sdf)
+            elif analysis_mode == "Isolines":
+                self.visualize_isolines(self.ax_sdf, sdf)
+            elif analysis_mode == "Path Tracing":
+                self.visualize_path_tracing(self.ax_sdf, sdf)
+            elif analysis_mode == "Curvature":
+                self.visualize_curvature(self.ax_sdf, sdf)
+        
+        elif self.visualization_style == "Standard":
             # Choose colormap based on signed/unsigned
             if self.use_unsigned_sdf:
                 # For unsigned, use a single-direction colormap (white to red)
@@ -1024,7 +1244,8 @@ class FuturisticSDFVisualizer:
                 vmin, vmax = -self.domain_size/2, self.domain_size/2
             
             # Plot the SDF
-            contour = self.ax_sdf.contourf(self.X, self.Y, display_sdf, levels=50, 
+            num_levels = min(50, max(10, self.resolution // 4))  # Scale levels with resolution
+            contour = self.ax_sdf.contourf(self.X, self.Y, display_sdf, levels=num_levels, 
                                         cmap=cmap, extend='both', vmin=vmin, vmax=vmax)
             
             # Add contour lines for the zero level (shape boundaries)
@@ -1033,25 +1254,25 @@ class FuturisticSDFVisualizer:
             
         elif self.visualization_style == "Hologram":
             # Holographic effect
-            holo_image = AdvancedVisualization.create_holographic_effect(sdf, self.domain_size)
+            holo_image = AdvancedVisualization.create_holographic_effect(sdf, self.domain_size, self.resolution)
             self.ax_sdf.imshow(holo_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
                              origin='lower')
             
         elif self.visualization_style == "Neon":
             # Neon wireframe effect
-            neon_image = AdvancedVisualization.create_neon_wireframe(sdf, self.domain_size)
+            neon_image = AdvancedVisualization.create_neon_wireframe(sdf, self.domain_size, self.resolution)
             self.ax_sdf.imshow(neon_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
                              origin='lower')
             
         elif self.visualization_style == "Heatmap":
             # Heatmap visualization
-            heatmap = AdvancedVisualization.create_heatmap_visualization(sdf, self.domain_size)
+            heatmap = AdvancedVisualization.create_heatmap_visualization(sdf, self.domain_size, self.resolution)
             self.ax_sdf.imshow(heatmap, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
                              origin='lower')
             
         elif self.visualization_style == "Electric":
             # Electric field visualization
-            electric = AdvancedVisualization.create_electric_field_visualization(sdf, self.domain_size)
+            electric = AdvancedVisualization.create_electric_field_visualization(sdf, self.domain_size, self.resolution)
             self.ax_sdf.imshow(electric, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
                              origin='lower')
         
@@ -1061,17 +1282,22 @@ class FuturisticSDFVisualizer:
         self.ax_sdf.set_xlim(-self.domain_size, self.domain_size)
         self.ax_sdf.set_ylim(-self.domain_size, self.domain_size)
         
-        # Set title based on signed/unsigned choice
-        title = 'Unsigned Distance Field' if self.use_unsigned_sdf else 'Signed Distance Field'
+        # Set title based on analysis mode or signed/unsigned choice
+        if analysis_mode != "None":
+            title = f"{analysis_mode} Analysis"
+        else:
+            title = 'Unsigned Distance Field' if self.use_unsigned_sdf else 'Signed Distance Field'
         self.ax_sdf.set_title(title, fontsize=12, color=FuturisticTheme.COLORS['accent'])
-        
+            
         # If animation is active, start the animation
         if self.animation_active and sdf is not None:
             self.animation = AdvancedVisualization.create_animated_pulse_effect(
                 self.ax_sdf, sdf, self.domain_size, frames=60, interval=50)
         
         # Adjust layout and redraw
+        original_figsize = self.fig.get_size_inches()
         self.fig.tight_layout()
+        self.fig.set_size_inches(original_figsize)  # Maintain original size
         self.canvas.draw()
 
 # Helper functions

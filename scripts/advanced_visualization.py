@@ -10,8 +10,11 @@ class AdvancedVisualization:
     """Advanced visualization effects for the SDF visualizer"""
     
     @staticmethod
-    def create_holographic_effect(sdf, domain_size=5.0, resolution=200, glow_intensity=1.0, scanline_intensity=0.5):
+    def create_holographic_effect(sdf, domain_size=5.0, resolution=None, glow_intensity=1.0, scanline_intensity=0.5):
         """Create a holographic effect for the SDF visualization with adjustable intensity"""
+
+        if resolution is None:
+            resolution = sdf.shape[0]
         # Create a grid
         x = np.linspace(-domain_size, domain_size, resolution)
         y = np.linspace(-domain_size, domain_size, resolution)
@@ -58,8 +61,10 @@ class AdvancedVisualization:
         return rgb_image
 
     @staticmethod
-    def create_neon_wireframe(sdf, domain_size=5.0, resolution=200, glow_intensity=1.0, edge_thickness=1.0):
+    def create_neon_wireframe(sdf, domain_size=5.0, resolution=None, glow_intensity=1.0, edge_thickness=1.0):
         """Create a neon wireframe visualization with adjustable intensity"""
+        if resolution is None:
+            resolution = sdf.shape[0]
         # Create a grid
         x = np.linspace(-domain_size, domain_size, resolution)
         y = np.linspace(-domain_size, domain_size, resolution)
@@ -134,8 +139,10 @@ class AdvancedVisualization:
         return rgb_image
 
     @staticmethod
-    def create_heatmap_visualization(sdf, domain_size=5.0, resolution=200, contrast=1.0, contour_intensity=0.5):
+    def create_heatmap_visualization(sdf, domain_size=5.0, resolution=None, contrast=1.0, contour_intensity=0.5):
         """Create a thermal/heatmap visualization with adjustable contrast and contour intensity"""
+        if resolution is None:
+            resolution = sdf.shape[0]
         # Create a grid
         x = np.linspace(-domain_size, domain_size, resolution)
         y = np.linspace(-domain_size, domain_size, resolution)
@@ -200,8 +207,10 @@ class AdvancedVisualization:
         return heatmap
 
     @staticmethod
-    def create_electric_field_visualization(sdf, domain_size=5.0, resolution=200, field_intensity=1.0, glow_strength=1.0):
+    def create_electric_field_visualization(sdf, domain_size=5.0, resolution=None, field_intensity=1.0, glow_strength=1.0):
         """Create an electric field visualization using the SDF gradient with adjustable intensity"""
+        if resolution is None:
+            resolution = sdf.shape[0]
         # Create a grid
         x = np.linspace(-domain_size, domain_size, resolution)
         y = np.linspace(-domain_size, domain_size, resolution)
