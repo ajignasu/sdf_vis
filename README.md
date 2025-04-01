@@ -1,4 +1,4 @@
-# Futuristic SDF Visualizer
+# SDF Visualizer
 
 A sleek, modern tool for visualizing and experimenting with Signed Distance Functions (SDFs) in 2D.
 

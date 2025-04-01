@@ -535,9 +535,18 @@ class FuturisticSDFVisualizer:
 
     def visualize_isolines(self, ax, sdf):
         """Visualize isolines (contours) of the SDF"""
-        # Create an array of levels for the isolines
+        # Calculate actual min/max values from the SDF data
+        actual_min = np.min(sdf)
+        actual_max = np.max(sdf)
+        
+        # For better visualization, make the range symmetric
+        abs_max = max(abs(actual_min), abs(actual_max))
+        plot_min = -abs_max
+        plot_max = abs_max
+        
+        # Create an array of levels for the isolines based on actual data range
         num_levels = max(5, min(21, self.resolution // 10))
-        levels = np.linspace(-self.domain_size/2, self.domain_size/2, num_levels)
+        levels = np.linspace(plot_min, plot_max, num_levels)
         
         # Plot the SDF with isolines
         cmap = FuturisticTheme.get_colormap()
@@ -549,16 +558,21 @@ class FuturisticSDFVisualizer:
                                 colors='white', linewidths=0.5)
         
         # Add contour labels
-        if self.resolution >= 128:
-            # For higher resolutions, show more labels
-            ax.clabel(contour_lines, inline=True, fontsize=8, fmt="%.1f", colors='white')
-        else:
-            # For lower resolutions, show fewer labels
-            select_levels = levels[::3]  # Show every third level
-            ax.clabel(contour_lines, levels=select_levels, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        ax.clabel(contour_lines, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        # if self.resolution >= 128:
+        #     # For higher resolutions, show more labels
+        #     ax.clabel(contour_lines, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        # else:
+        #     # For lower resolutions, show fewer labels
+        #     # select_levels = levels[::3]  # Show every third level
+        #     # ax.clabel(contour_lines, levels=select_levels, inline=True, fontsize=8, fmt="%.1f", colors='white')
+        #     ax.clabel(contour_lines, inline=True, fontsize=8, fmt="%.1f", colors='white')
         
         # Highlight the zero contour
         ax.contour(self.X, self.Y, sdf, levels=[0], colors=['yellow'], linewidths=2)
+        
+        # Return the filled contour for colorbar creation
+        return contour_filled
 
     def visualize_path_tracing(self, ax, sdf):
         """Visualize path tracing along the SDF gradient"""
@@ -655,27 +669,12 @@ class FuturisticSDFVisualizer:
         bbox = ax.get_position()
         ax.clear()
         
-        # Remove existing colorbar if it exists
-        if hasattr(self, 'curvature_colorbar') and self.curvature_colorbar is not None:
-            try:
-                self.curvature_colorbar.remove()
-            except:
-                pass
-            self.curvature_colorbar = None
-        
         # Plot the curvature
         im = ax.imshow(curvature, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size],
                     origin='lower', cmap=curvature_cmap)
         
         # Add zero level contour to show the shape boundary
         ax.contour(self.X, self.Y, sdf, levels=[0], colors=['black'], linewidths=2)
-        
-        # Add a new colorbar and store a reference to it
-        # Use a fixed size and position for the colorbar to prevent figure shrinking
-        # cax = self.fig.add_axes([bbox.x1 + 0.02, bbox.y0, 0.02, bbox.height])
-        cax = self.fig.add_axes([0.94, 0.15, 0.02, 0.7])
-        self.curvature_colorbar = self.fig.colorbar(im, cax=cax)
-        self.curvature_colorbar.set_label('Curvature', color=FuturisticTheme.COLORS['text'])
         
         # Restore original axis position
         ax.set_position(bbox)
@@ -686,6 +685,9 @@ class FuturisticSDFVisualizer:
         ax.set_xlim(-self.domain_size, self.domain_size)
         ax.set_ylim(-self.domain_size, self.domain_size)
         ax.set_aspect('equal')
+        
+        # Return the image for colorbar creation
+        return im
     
     def update_analysis_view(self, event=None):
         """Update the visualization when analysis mode changes"""
@@ -1174,6 +1176,43 @@ class FuturisticSDFVisualizer:
         else:  # "none" or default
             return sdf1
     
+    def add_colorbar(self, mappable, label):
+        """Add a colorbar for the given mappable object with the specified label."""
+        # Remove any existing colorbar
+        if hasattr(self, 'sdf_colorbar') and self.sdf_colorbar is not None:
+            try:
+                self.sdf_colorbar.remove()
+            except:
+                pass
+        
+        # Check if mappable has a valid range before creating colorbar
+        # This prevents errors when there's only a single value
+        try:
+            # Get the normalization instance from the mappable
+            norm = mappable.norm
+            if hasattr(norm, 'vmin') and hasattr(norm, 'vmax'):
+                if norm.vmin == norm.vmax:
+                    # If there's only one value, slightly adjust the range
+                    # to prevent the indexing error
+                    norm.vmin -= 0.001
+                    norm.vmax += 0.001
+        except (AttributeError, IndexError):
+            pass  # If we can't access or modify the norm, proceed anyway
+        
+        # Create a new colorbar
+        try:
+            cax = self.fig.add_axes([0.94, 0.15, 0.02, 0.7])
+            self.sdf_colorbar = self.fig.colorbar(mappable, cax=cax)
+            self.sdf_colorbar.set_label(label, color=FuturisticTheme.COLORS['text'])
+            
+            # Style the colorbar to match the futuristic theme
+            self.sdf_colorbar.ax.yaxis.set_tick_params(color=FuturisticTheme.COLORS['text'])
+            for t in self.sdf_colorbar.ax.yaxis.get_ticklabels():
+                t.set_color(FuturisticTheme.COLORS['text'])
+        except Exception as e:
+            print(f"Colorbar creation failed: {e}")
+        # If colorbar creation fails, just skip it rather than crashing
+    
     def update_plot(self):
         # Stop any existing animation
         if self.animation is not None:
@@ -1210,7 +1249,7 @@ class FuturisticSDFVisualizer:
         # Add futuristic grid lines
         FuturisticTheme.add_grid_lines(self.ax_sdf, spacing=1.0)
 
-        # Remove any existing colorbar when switching modes
+        # Remove any existing colorbars
         if hasattr(self, 'curvature_colorbar') and self.curvature_colorbar is not None:
             try:
                 self.curvature_colorbar.remove()
@@ -1218,63 +1257,126 @@ class FuturisticSDFVisualizer:
                 pass
             self.curvature_colorbar = None
         
+        if hasattr(self, 'sdf_colorbar') and self.sdf_colorbar is not None:
+            try:
+                self.sdf_colorbar.remove()
+            except:
+                pass
+            self.sdf_colorbar = None
+        
         # Check if we should display an analysis view
         analysis_mode = self.analysis_var.get()
         if analysis_mode != "None" and sdf is not None:
             # Apply the selected analysis visualization
             if analysis_mode == "Gradient Vectors":
                 self.visualize_gradient(self.ax_sdf, sdf)
+                # No colorbar for gradient vectors
             elif analysis_mode == "Isolines":
-                self.visualize_isolines(self.ax_sdf, sdf)
+                contours = self.visualize_isolines(self.ax_sdf, sdf)
+                if contours is not None:
+                    self.add_colorbar(contours, 'Distance')
             elif analysis_mode == "Path Tracing":
                 self.visualize_path_tracing(self.ax_sdf, sdf)
+                # No standard colorbar for path tracing
             elif analysis_mode == "Curvature":
-                self.visualize_curvature(self.ax_sdf, sdf)
+                im = self.visualize_curvature(self.ax_sdf, sdf)
+                if im is not None:
+                    # For curvature, we'll use a special colorbar (as in your original code)
+                    cax = self.fig.add_axes([0.94, 0.15, 0.02, 0.7])
+                    self.curvature_colorbar = self.fig.colorbar(im, cax=cax)
+                    self.curvature_colorbar.set_label('Curvature', color=FuturisticTheme.COLORS['text'])
         
         elif self.visualization_style == "Standard":
-            # Choose colormap based on signed/unsigned
+            num_levels = min(50, max(10, self.resolution // 4))  # Scale levels with resolution
+            # Calculate actual min/max values from the SDF data
+            actual_min = np.min(display_sdf)
+            actual_max = np.max(display_sdf)
+            
+            # Print these values to verify
+            # print(f"Display SDF range - min: {actual_min:.4f}, max: {actual_max:.4f}")
+            
             if self.use_unsigned_sdf:
                 # For unsigned, use a single-direction colormap (white to red)
                 cmap = LinearSegmentedColormap.from_list(
                     "unsigned_sdf", [(1, 1, 1), (1, 0, 0)], N=100)
-                vmin, vmax = 0, self.domain_size/2
+                vmin = 0
+                vmax = actual_max
+                label = 'Unsigned Distance'
             else:
                 # For signed, use the standard blue-white-red colormap
                 cmap = FuturisticTheme.get_colormap()
-                vmin, vmax = -self.domain_size/2, self.domain_size/2
+                
+                # ENSURE we have a range that includes negative values if they exist
+                vmin = actual_min if actual_min < 0 else -0.1  # Force at least some negative range
+                vmax = actual_max
+                
+                # For better visualization, make the range symmetric if signed
+                abs_max = max(abs(vmin), abs(vmax))
+                vmin = -abs_max
+                vmax = abs_max
+                
+                label = 'Signed Distance'
             
-            # Plot the SDF
-            num_levels = min(50, max(10, self.resolution // 4))  # Scale levels with resolution
-            contour = self.ax_sdf.contourf(self.X, self.Y, display_sdf, levels=num_levels, 
-                                        cmap=cmap, extend='both', vmin=vmin, vmax=vmax)
+            # Print the final vmin/vmax used
+            # print(f"Colorbar range - vmin: {vmin:.4f}, vmax: {vmax:.4f}")
+            
+            # Create explicit levels to ensure negative values are included
+            if not self.use_unsigned_sdf:
+                # Create explicit levels that include negative values
+                levels = np.linspace(vmin, vmax, num_levels)
+                # Ensure zero is included in the levels
+                if vmin < 0 < vmax:
+                    zero_level = np.array([0])
+                    levels = np.sort(np.concatenate([levels, zero_level]))
+            else:
+                levels = num_levels  # Just use the number of levels for unsigned
+            
+            # Plot the SDF with explicit levels
+            contour = self.ax_sdf.contourf(self.X, self.Y, display_sdf, levels=levels, 
+                                        cmap=cmap, extend='both')
             
             # Add contour lines for the zero level (shape boundaries)
-            # For unsigned SDF, show contour at the original zero crossing
-            self.ax_sdf.contour(self.X, self.Y, sdf, levels=[0], colors='white', linewidths=2)
+            self.ax_sdf.contour(self.X, self.Y, sdf, levels=[0], colors=['white'], linewidths=2)
+            
+            # Create a colorbar with explicit ticks to show negative values
+            self.add_colorbar(contour, label)
+            
+            # Make sure the colorbar shows appropriate ticks
+            if not self.use_unsigned_sdf:
+                # Create nicely spaced ticks that include negative values
+                tick_count = 9  # Odd number to include zero
+                ticks = np.linspace(vmin, vmax, tick_count)
+                self.sdf_colorbar.set_ticks(ticks)
+                # Format the ticks to ensure negative sign shows
+                self.sdf_colorbar.set_ticklabels([f"{tick:.2f}" for tick in ticks])
             
         elif self.visualization_style == "Hologram":
             # Holographic effect
             holo_image = AdvancedVisualization.create_holographic_effect(sdf, self.domain_size, self.resolution)
-            self.ax_sdf.imshow(holo_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
-                             origin='lower')
+            im = self.ax_sdf.imshow(holo_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
+                                origin='lower')
+            self.add_colorbar(im, 'Hologram Intensity')
             
         elif self.visualization_style == "Neon":
             # Neon wireframe effect
             neon_image = AdvancedVisualization.create_neon_wireframe(sdf, self.domain_size, self.resolution)
-            self.ax_sdf.imshow(neon_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
-                             origin='lower')
+            im = self.ax_sdf.imshow(neon_image, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
+                                origin='lower')
+            self.add_colorbar(im, 'Neon Intensity')
             
         elif self.visualization_style == "Heatmap":
             # Heatmap visualization
             heatmap = AdvancedVisualization.create_heatmap_visualization(sdf, self.domain_size, self.resolution)
-            self.ax_sdf.imshow(heatmap, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
-                             origin='lower')
+            im = self.ax_sdf.imshow(heatmap, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
+                                origin='lower')
+            self.add_colorbar(im, 'Heat Intensity')
             
         elif self.visualization_style == "Electric":
             # Electric field visualization
             electric = AdvancedVisualization.create_electric_field_visualization(sdf, self.domain_size, self.resolution)
-            self.ax_sdf.imshow(electric, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
-                             origin='lower')
+            im = self.ax_sdf.imshow(electric, extent=[-self.domain_size, self.domain_size, -self.domain_size, self.domain_size], 
+                                origin='lower')
+            self.add_colorbar(im, 'Field Strength')
         
         # Set axis labels and limits
         self.ax_sdf.set_xlabel('X', fontsize=10, color=FuturisticTheme.COLORS['text'])

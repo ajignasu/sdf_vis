@@ -1,3 +1,4 @@
 sdfviz/
 __pycache__/
 *.pyc
+*.npy
