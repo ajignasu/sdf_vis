@@ -276,7 +276,7 @@ class FuturisticSDFVisualizer:
     
     def setup_drawing_canvas(self):
         """Setup canvas for drawing shapes"""
-        # Initialize drawing data
+        # Initialize drawing data with the CURRENT resolution
         self.drawing_mask = np.zeros((self.resolution, self.resolution), dtype=bool)
         self.drawing = False
         
@@ -301,6 +301,14 @@ class FuturisticSDFVisualizer:
         self.drawing = True
         self.draw_at_position(event.xdata, event.ydata)
 
+    def reset_drawing_state(self):
+        """Reset the drawing state when resolution changes"""
+        if hasattr(self, 'drawing_mask'):
+            self.drawing_mask = np.zeros((self.resolution, self.resolution), dtype=bool)
+        
+        if hasattr(self, 'drawing_overlay') and self.drawing_overlay is not None:
+            self.drawing_overlay.set_offsets(np.empty((0, 2)))
+
     def on_drawing_motion(self, event):
         """Handle mouse motion for drawing"""
         if not self.drawing or event.inaxes != self.ax_sdf:
@@ -317,12 +325,9 @@ class FuturisticSDFVisualizer:
         if x is None or y is None:
             return
         
-        # # Get brush size
-        # raw_brush_size = self.brush_size_var.get()
-        # brush_size = max(1, int(raw_brush_size * self.resolution / 200))
-
+        # Get brush radius in domain coordinates
         brush_radius_domain = self.brush_size_var.get() * self.domain_size / 20.0
-    
+        
         # Calculate which pixels this covers based on current resolution
         pixels_per_unit = self.resolution / (2 * self.domain_size)
         brush_radius_pixels = int(brush_radius_domain * pixels_per_unit)
@@ -342,13 +347,15 @@ class FuturisticSDFVisualizer:
         y_indices, x_indices = np.ogrid[-brush_size:brush_size+1, -brush_size:brush_size+1]
         mask = x_indices**2 + y_indices**2 <= brush_size**2
         
-        # Apply the mask to the drawing
+        # Apply the mask to the drawing, ensuring we stay within bounds
         for dy in range(-brush_size, brush_size+1):
             for dx in range(-brush_size, brush_size+1):
                 if mask[dy+brush_size, dx+brush_size]:
                     ny, nx = y_idx + dy, x_idx + dx
                     if 0 <= ny < self.resolution and 0 <= nx < self.resolution:
-                        self.drawing_mask[ny, nx] = True
+                        # Double-check we're within bounds of the drawing mask
+                        if ny < self.drawing_mask.shape[0] and nx < self.drawing_mask.shape[1]:
+                            self.drawing_mask[ny, nx] = True
         
         # Update the drawing overlay
         y_coords, x_coords = np.where(self.drawing_mask)
@@ -363,6 +370,7 @@ class FuturisticSDFVisualizer:
 
     def clear_drawing(self):
         """Clear the current drawing"""
+        # Make sure the mask matches the current resolution
         self.drawing_mask = np.zeros((self.resolution, self.resolution), dtype=bool)
         self.drawing_overlay.set_offsets(np.empty((0, 2)))
         self.canvas.draw_idle()
@@ -473,6 +481,7 @@ class FuturisticSDFVisualizer:
             self.resolution = new_resolution
             self.resolution_var.set(new_resolution)
             self.update_grid()
+            self.reset_drawing_state()
             self.update_plot()
 
     def create_button(self, parent, text, command, row):
