@@ -1,12 +1,12 @@
 # SDF Visualizer
 
-A sleek, modern tool for visualizing and experimenting with Signed Distance Functions (SDFs) in 2D.
+A tool for visualizing and experimenting with Signed Distance Functions (SDFs) in 2D. I built this to easily visualize and understand boolean ops on distance fields.
 
 ![SDF Visualizer Screenshot](data/test.png)
 
 ## Features
 
-- **Interactive Shape Creation**: Add circles, rectangles, triangles, and lines with real-time visualization
+- **Interactive Shape Creation**: circles, rectangles, triangles, lines, draw custom shapes with real-time visualization
 - **Boolean Operations**: Union, intersection, difference, and smooth union operations between shapes
 - **Multiple Visualization Styles**: 
   - Standard (color-mapped)
@@ -17,6 +17,10 @@ A sleek, modern tool for visualizing and experimenting with Signed Distance Func
 - **Signed/Unsigned Mode**: Toggle between signed and unsigned distance field visualization
 - **Animation**: Animated pulsing visualization option
 - **Export**: Save visualizations as images with customizable options
+
+## Work in Progress
+- **Curvature computation might be incorrect**
+- **Custom shapes use a mask. Therefore, distance field inside the shape maybe inaccurate**
 
 ## Installation
 
@@ -152,11 +156,6 @@ Signed Distance Functions represent geometry by encoding the distance from any p
 - **Difference**: max(sdf1, -sdf2)
 - **Smooth Union**: Smooth interpolation between fields
 
-## Troubleshooting
-
-- **Visualization issues**: Try toggling between visualization styles
-- **Performance problems**: Reduce the resolution in the code (default is 200)
-- **Shape distortion**: Ensure coordinates are within the domain size (default ±5 units)
 
 <!-- ## License
 
@@ -166,3 +165,4 @@ Signed Distance Functions represent geometry by encoding the distance from any p
 
 - Inigo Quilez for pioneering work on SDFs
 - The matplotlib and numpy communities
+- Claude 3.7 Sonnet
